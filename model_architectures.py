@@ -3,47 +3,50 @@ from sklearn.linear_model import Ridge
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.svm import SVR
 import os
+import numpy as np
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 import tensorflow as tf
 
-def get_model(model_architecture):
-    'call this to set model._model based upon model_architecture'
-    model_switcher= {
-        'ridge': ridge_model(),
-        'forest': forest_model(),
-        'svm': svm_model(),
-        'fnn': fnn(),
-        'emb_fnn_flat': emb_fnn_flat(),
-        'emb_fnn_maxpool': emb_fnn_maxpool(),
-        'emb_rnn': emb_rnn(),
-        'emb_cnn': emb_cnn(),
-        'small_emb_rnn': small_emb_rnn(),
-        'small_emb_cnn': small_emb_cnn(),
-        'small_emb_atn_rnn': small_emb_atn_rnn(),
-        'small_emb_atn_cnn': small_emb_atn_cnn()
-        }
-    return model_switcher.get(model_architecture)
-
 class ridge_model():
     def __init__(self):
+        ## This creates an object of instance ridge_model with a class variable parameter_space
+        ## which is a dictionaray with the key being related to a value unifromly between -5 and 5  
         self.parameter_space={
         'alpha':hp.uniform('alpha', -5, 5)
         }
+         
     def set_model(self,space,**kwargs):
+        ## This function runs a Ridge regression with the bais of the regression specified in 
+        ## space dictionary, under the 'alpha' key. space variable is a dictionary with the curretn set of hyper parameters.
         self.model=Ridge(alpha=10**space['alpha'])
+        
     def fit(self,x,y):
+        ## This function takes in training and target data and fits it in a ridge regression
+        ## model specified in the set_model function. X corresponds to an array of training data
+        ## y is an array of target values. 
         self.model.fit(x,y)
 
 class forest_model():
     def __init__(self):
+        ## This creates an object of instance forest_model with a class variable parameter_space
+        ## which is a dictionary with n_estimators and max_depth a random integer in the defined space
+        ## and max_features a random number choosen in a given space.
         self.parameter_space={
         'n_estimators':hp.quniform('n_estimators', 1, 500, 1),
         'max_depth':hp.quniform('max_depth', 1, 100, 1),
         'max_features':hp.uniform('max_features', 0, 1)
         }
+        
     def set_model(self,space,**kwargs):
+        ## This function runs a Random Forest regression with the features of the regression: no:of trees = n_estimators
+        ## and tree depth = max_depth and max_features is the number of features to consider for the best split
+        ## space variable is a dictionary with the curretn set of hyper parameters
         self.model=RandomForestRegressor(n_estimators=int(space['n_estimators']),max_depth=int(space['max_depth']),max_features=space['max_features'])
+        
     def fit(self,x,y):
+        ## This function takes in training and target data and fits it in a ridge regression
+        ## model specified in the set_model function. X corresponds to an array of training data
+        ## y is an array of target values.
         self.model.fit(x,y)
 
 class svm_model():
@@ -72,6 +75,7 @@ class nn():
         self.space=space
         input_shape=kwargs['xa_len']+kwargs['cat_var_len']
         self.xa_len=kwargs['xa_len']
+        self.lin_or_sig=kwargs['lin_or_sig']
 
         self.inputs=tf.keras.Input(shape=(input_shape,))
 
@@ -90,7 +94,7 @@ class nn():
             dense[i]=tf.keras.layers.Dense(nodes,activation='relu')(drop[i])
         
         ###final output uses last dropout layer
-        self.outputs=tf.keras.layers.Dense(1,activation='linear')(drop[-1])  
+        self.outputs=tf.keras.layers.Dense(1,activation=self.lin_or_sig)(drop[-1])  
 
 
     def set_end_model(self):
@@ -134,6 +138,10 @@ class emb_nn(nn):
     def get_seq_embeding_layer_model(self):
         return tf.keras.Model(inputs=self.model.input,outputs=self.model.get_layer('seq_embedding').output)
 
+    def reduce_to_linear_embedding(self):
+        self.parameter_space['dense_layers']=hp.choice('dense_layers',[1])
+
+
 
 class emb_fnn_maxpool(emb_nn):
     def __init__(self):
@@ -147,6 +155,11 @@ class emb_fnn_maxpool(emb_nn):
         self.recombine_cat_var()
         self.dense_layers()
         self.set_end_model()
+
+class emb_fnn_maxpool_linear(emb_fnn_maxpool):
+    def __init__(self):
+        super().__init__()
+        self.reduce_to_linear_embedding()
 
 class emb_fnn_flat(emb_nn):
     def __init__(self):
@@ -184,6 +197,11 @@ class small_emb_rnn(emb_rnn):
     def __init__(self):
         super().__init__()
         self.parameter_space['units']=hp.quniform('units',1,5,1)
+
+class small_emb_rnn_linear(small_emb_rnn):
+    def __init__(self):
+        super().__init__()
+        self.reduce_to_linear_embedding()
 
 class small_emb_atn_rnn(small_emb_rnn):
     def __init__(self):
@@ -231,6 +249,13 @@ class small_emb_cnn(emb_cnn):
         super().__init__()
         self.parameter_space['filters']=hp.quniform('filters',1,10,1)
 
+
+class small_emb_cnn_linear(small_emb_cnn):
+    def __init__(self):
+        super().__init__()
+        self.reduce_to_linear_embedding()
+
+
 class small_emb_atn_cnn(small_emb_cnn):
     def __init__(self):
         super().__init__()
@@ -251,3 +276,34 @@ class small_emb_atn_cnn(small_emb_cnn):
         self.recombine_cat_var()
         self.dense_layers()
         self.set_end_model()
+
+def get_model(model_architecture):
+    ##input model_architecture is a string input into this function
+    'call this to set model._model based upon model_architecture'
+    ## the function variable model_switcher is a dictionary with 
+    ## string key and class values. The function values are defined below in the code. 
+    model_switcher= {
+        'ridge': ridge_model(),
+        'forest': forest_model(),
+        'svm': svm_model(),
+        'fnn': fnn(),
+        'emb_fnn_flat': emb_fnn_flat(),
+        'emb_fnn_maxpool': emb_fnn_maxpool(),
+        'emb_fnn_maxpool_linear': emb_fnn_maxpool_linear(),
+        'emb_rnn': emb_rnn(),
+        'emb_cnn': emb_cnn(),
+        'small_emb_rnn': small_emb_rnn(),
+        'small_emb_cnn': small_emb_cnn(),
+        'small_emb_atn_rnn': small_emb_atn_rnn(),
+        'small_emb_atn_cnn': small_emb_atn_cnn(),
+        'small_emb_rnn_linear': small_emb_rnn_linear(),
+        'small_emb_cnn_linear': small_emb_cnn_linear()
+        }
+    ## This returns an object class value corresponding to the string key value input
+    ## Suggestion, add a default value in return statement below in case given key value DNE
+    if model_architecture in model_switcher.keys():
+        return model_switcher.get(model_architecture)
+    else:
+        print("Please choose from the following model architectures:")
+        print(list(model_switcher.keys()))
+        return None

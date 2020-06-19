@@ -13,44 +13,77 @@ class model:
     then use the set hyperparameters to evaluate against a test set and save predictions''' 
 
     def __init__(self, model_in, model_out, model_architecture, sample_fraction):
+        ## This creates an instance of an object of type model 
+        ## Of the given inputs model_in, model_out and model_architecture are strings
+        ## sample fractions is a float of value between 0.0-1.0
         self.sample_fraction=sample_fraction
+        
         self.model_architecture=model_architecture
+        ## Notice how the class variables sample_fraction and model_architecture
+        ## are attributed to their respective inputs
+        
         self.model_name=model_in+'_'+model_out+'_'+model_architecture+'_'+str(sample_fraction)
+        ## model_name is a string combination of all the inputs. 
+        
         self.trials_file='./trials/'+self.model_name+'.pkl'
         self.stats_file='./model_stats/'+self.model_name+'.pkl'
         self.plotpairs_file='./plotpairs/'+self.model_name+'.pkl'
+        ## The above class variables are string pathways to respective pickle files needed to construct the model
+        ## These class variables are also dependent on the previously mentioned variable model_name
+        
         self.figure_file='./figures/'+self.model_name+'.png'
+        ## figure_file is a string pathway to access the corresponding model image given the model_name
+        
         self.model_loc='./models/'+self.model_name
-
-
-        self.build_architecture(model_architecture) #ridge,forest,svm,nn(emb,)
-        self.load_hyp()
-        self.load_model_stats()
-        self.plotpairs_cv=[[],[],[]] #1st repeat CV (concat all splits) predictions [true y, pred y, cat var]
-        self.plotpairs_test=[[],[],[]] #1st repeat test predictions 
-        self.load_plotpairs()
-
+        ## model_loc is a string pathway showing the location of the model.
+        
+        
+        self._model = get_model(model_architecture) #ridge,forest,svm,nn(emb,)
+        ## This sets a self._model to the regression typoe used to build the model, model_architercture is a string input
+        
+        ## If-else statement checks if the following model has already been run. 
+        ## if it does exsist then it access them and assigns them to respective class variable
+        ## else it sets them to a default value. 
+        if(self.load_hyp()==True):
+            self.model_stats = pickle.load(open(self.stats_file, "rb"))
+            [self.plotpairs_cv,self.plotpairs_test]=pickle.load(open(self.plotpairs_file,'rb'))
+            
+        else:
+            print('No previous trial data, model data or plot data available')
+            self.model_stats= {'cv_avg_loss': np.inf,'cv_std_loss': [],'test_avg_loss': np.inf,'test_std_loss': []}
+            [self.model_plotpairs_cv,self.model_plotpairs_test]=[[[],[],[]],[[],[],[]]]
+        
         self.plot_type=None
 
     def parent_warning(self):
         print('im in parent class')
 
+### Question: should we be amending the model_architecture and sample fraction
     def update_model_name(self,model_name):
+        ## This is a setter function used to change the model_name, thereby the assay, model_architecture and corresponding
+        ## trial data, model data and plot data. The function input is a string
         self.model_name=model_name
         self.trials_file='./trials/'+self.model_name+'.pkl'
         self.stats_file='./model_stats/'+self.model_name+'.pkl'
         self.plotpairs_file='./plotpairs/'+self.model_name+'.pkl'
         self.figure_file='./figures/'+self.model_name+'.png'
         self.model_loc='./models/'+self.model_name
+        ## The above statements set the class variable established in the instantiation function to the new value
         self.load_hyp()
         self.load_model_stats()
         self.load_plotpairs()
+        ## The above functions check if trial data, model data and plot data already exsist for the given model_name
+        ## If it doesn exsist then it sets it respectively or else it sets it to a 
 
     def save_plotpairs(self):
+        ## This function navigates to the plotpairs directory and saves 
+        ## the plotpairs_cv and plotpairs_test data as a pickle file under the name of the model_name
         with open (self.plotpairs_file,'wb') as f:
             pickle.dump([self.plotpairs_cv,self.plotpairs_test],f)
 
     def load_plotpairs(self):
+        ## This function checks whether plot data is available in the plotpairs directory
+        ## if it is available then it sets the ploatpairs_cv and plotpairs_test to the data else it defualts them
         try:
             [self.plotpairs_cv,self.plotpairs_test]=pickle.load(open(self.plotpairs_file,'rb'))
         except:
@@ -58,10 +91,14 @@ class model:
             [self.model_plotpairs_cv,self.model_plotpairs_test]=[[[],[],[]],[[],[],[]]]
 
     def save_model_stats(self):
+        ## This function navigates to the model_stats directory and saves the 
+        ## self.model_stats data as a pickle file under the model_name
         with open (self.stats_file,'wb') as f:
             pickle.dump(self.model_stats,f)
 
     def load_model_stats(self):
+        ## This function checks whether model data is available in the model_stats directory
+        ## if it is available then it sets the model_stats variable to the data else it defaults the variable
         try: 
             self.model_stats = pickle.load(open(self.stats_file, "rb"))
         except:
@@ -72,18 +109,53 @@ class model:
             'test_avg_loss': np.inf,
             'test_std_loss': []
             }
+            print(self.model_name)
 
     def build_architecture(self, model_architecture):
+        ## This function is used to create a model_architecure model object and make it a protected class variable
+        ## also acts aas a setter function
         'load architecture class which sets hyp space'
         self._model=get_model(model_architecture)
 
+    def load_hyp(self):
+        ## This function checks whether trial data is available in the trials directory
+        ## if it is available then it sets the tpe_trails variable to the data else it defaults the variable
+        'load hyperopt trials'
+        try:  # try to load an already saved trials object
+            self.tpe_trials = pickle.load(open(self.trials_file, "rb"))
+            return True
+        except:
+            self.tpe_trials = Trials()
+            return False
+
+    def save_hyp(self):
+        ## This function navigates to the trials directory and saves the
+        ## self.tpe_trials  data as a pickle file under the model name
+        'save hyperopt trials, refresh best trial'
+        with open(self.trials_file, "wb") as f:
+            pickle.dump(self.tpe_trials, f)
+    
+    def format_modelIO(self,df):
+        ## df is a dataframe object
+        'based upon model architecture and catagorical variables create the numpy input (x) and output (y) for the model'
+        ## This function only works for the objects x_to_assay_model or the x_to_yield_model defined in the submodels_module.py script
+        ## If it is the x_to_assay_model then the .get_output_and_explode function calls the explode_assay function of the 
+        ## load_format_data.py script with the assays specified in the instatiation of the object
+        ## Else it is the x_to_yield_model then the .get_output_and_explode function calls thee explode_yield function of the load_format_data py script
+        df_local,cat_var,y=self.get_output_and_explode(df) #set y, do output firest to explode cat variables
+        ## Refer to the load_format_data functions of explode_yield and explode_assay to determine the value in df_local, cat_var and y
+        x_a=self.get_input_seq(df_local) #set xa (OH seq, Ord seq, assay, control)
+        x=load_format_data.mix_with_cat_var(x_a,cat_var) #mix xa with cat variables
+        return x,y,cat_var
+            
     def evaluate_model_common(self,space,save_model):
+        ## The space input is a dictionary with the details regarding the parameter space
         true_pred_pairs=[]
         model_no=0
         for i in self.data_pairs:
             train_x,train_y,train_cat_var=self.format_modelIO(i[0])
             test_x,test_y,test_cat_var=self.format_modelIO(i[1])
-            self._model.set_model(space,xa_len=len(train_x[0])-len(train_cat_var[0]), cat_var_len=len(train_cat_var[0]))
+            self._model.set_model(space,xa_len=len(train_x[0])-len(train_cat_var[0]), cat_var_len=len(train_cat_var[0]), lin_or_sig=self.lin_or_sig)
             self._model.fit(train_x,train_y)
             if save_model:
                 self.save_model(model_no)
@@ -140,20 +212,11 @@ class model:
             return sorted_trials[0]
         print('no trials found')
 
-    def load_hyp(self):
-        'load hyperopt trials'
-        try:  # try to load an already saved trials object
-            self.tpe_trials = pickle.load(open(self.trials_file, "rb"))
-        except:
-            self.tpe_trials = Trials()
-
-    def save_hyp(self):
-        'save hyperopt trials, refresh best trial'
-        with open(self.trials_file, "wb") as f:
-            pickle.dump(self.tpe_trials, f)
-
     def save_model(self,model_no):
         'save the trained model'
+        ## Checks if the regression model for the data is based on neural network
+        ## If it is saves all layer weights as a tensor flow in the models directors under the model name
+        ## Else it saves the model as a pickle file in models directory under the model name
         if 'nn' in self.model_architecture:
             self._model.model.save_weights(self.model_loc+'_'+str(model_no)+'/')
         else:
@@ -161,17 +224,15 @@ class model:
                 pickle.dump(self._model.model, f)
 
     def load_model(self,model_no):
+        ## Checkis if the regression model for the data is based on neural network 
+        ## If it is, it loads all the layer weights based on the network to the self._model class variable
+        ## Else it loads the class variable self._model as usual
         if 'nn' in self.model_architecture:
             self._model.model.load_weights(self.model_loc+'_'+str(model_no)+'/').expect_partial()
         else:
             self._model.model=pickle.load(open(self.model_loc+'_'+str(model_no)+'.pkl', "rb"))
-
-    def format_modelIO(self,df):
-        'based upon model architecture and catagorical variables create the numpy input (x) and output (y) for the model'
-        df_local,cat_var,y=self.get_output_and_explode(df) #set y, do output firest to explode cat variables
-        x_a=self.get_input_seq(df_local) #set xa (OH seq, Ord seq, assay, control)
-        x=load_format_data.mix_with_cat_var(x_a,cat_var) #mix xa with cat variables
-        return x,y,cat_var
+#### Fix this below
+    
 
     def make_cv_dataset(self):
         'create list of subtraining/validation by repeated cv of training data'
