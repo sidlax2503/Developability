@@ -26,6 +26,7 @@ class ridge_model():
         ## y is an array of target values. 
         self.model.fit(x,y)
 
+space = {'alpha': 1}
 class forest_model():
     def __init__(self):
         ## This creates an object of instance forest_model with a class variable parameter_space

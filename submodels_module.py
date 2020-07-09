@@ -4,6 +4,7 @@ from functools import partial
 from model_module import model
 import load_format_data
 import plot_model
+from hyperopt import hp
 
 
 
@@ -94,10 +95,6 @@ class x_to_yield_model(model):
         self.test_model()
         # self.plot()
         
-item1 = x_to_yield_model('assays1','svm', 1)
-item1.save_predictions('assay_to_dot_training_data.pkl')
-
-
 class x_to_assay_model(model):
     'sets to assay_model'
     def __init__(self, model_in, assays, model_architecture, sample_fraction):
@@ -159,17 +156,12 @@ class x_to_assay_model(model):
                     df.loc[:,'learned_embedding']=seq_emb_list
                 df.to_pickle('./datasets/predicted/learned_embedding_'+df_name+'_'+self.model_name+'_'+str(z)+'.pkl')
 
-
-
 class assay_to_yield_model(x_to_yield_model, assay_to_x_model):
     'assay to yield, provide which assays, limit test set to useable subset'
     def __init__(self, assays, model_architecture, sample_fraction):
         self.assay_str=','.join([str(x) for x in assays])
         super().__init__('assays'+self.assay_str, model_architecture, sample_fraction)
         assay_to_x_model.__init__(self,assays)
-
-
-
 
 class seq_to_yield_model(x_to_yield_model, seq_to_x_model):
     'seq to yield'

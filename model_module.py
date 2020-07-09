@@ -135,83 +135,6 @@ class model:
         with open(self.trials_file, "wb") as f:
             pickle.dump(self.tpe_trials, f)
     
-    def format_modelIO(self,df):
-        ## df is a dataframe object
-        'based upon model architecture and catagorical variables create the numpy input (x) and output (y) for the model'
-        ## This function only works for the objects x_to_assay_model or the x_to_yield_model defined in the submodels_module.py script
-        ## If it is the x_to_assay_model then the .get_output_and_explode function calls the explode_assay function of the 
-        ## load_format_data.py script with the assays specified in the instatiation of the object
-        ## Else it is the x_to_yield_model then the .get_output_and_explode function calls thee explode_yield function of the load_format_data py script
-        df_local,cat_var,y=self.get_output_and_explode(df) #set y, do output firest to explode cat variables
-        ## Refer to the load_format_data functions of explode_yield and explode_assay to determine the value in df_local, cat_var and y
-        x_a=self.get_input_seq(df_local) #set xa (OH seq, Ord seq, assay, control)
-        x=load_format_data.mix_with_cat_var(x_a,cat_var) #mix xa with cat variables
-        return x,y,cat_var
-            
-    def evaluate_model_common(self,space,save_model):
-        ## The space input is a dictionary with the details regarding the parameter space
-        true_pred_pairs=[]
-        model_no=0
-        for i in self.data_pairs:
-            train_x,train_y,train_cat_var=self.format_modelIO(i[0])
-            test_x,test_y,test_cat_var=self.format_modelIO(i[1])
-            self._model.set_model(space,xa_len=len(train_x[0])-len(train_cat_var[0]), cat_var_len=len(train_cat_var[0]), lin_or_sig=self.lin_or_sig)
-            self._model.fit(train_x,train_y)
-            if save_model:
-                self.save_model(model_no)
-            test_prediction=self._model.model.predict(test_x).squeeze().tolist()
-            true_pred_pairs.append([test_y,test_prediction,test_cat_var])
-            model_no=model_no+1
-        return true_pred_pairs
-
-    def evaluate_model_cv(self,space,force_saveplots=False):
-        'train the repeated kfold dataset. Caclulate average across splits of one dataset, then average across repeats of dataset'
-        true_pred_pairs=self.evaluate_model_common(space,False)
-        cv_mse=[] #average mse values for each repeat of the spliting
-        for i in range(0,len(true_pred_pairs),self.num_cv_splits):
-            split_mse=[] #mse values for each split of the data
-            for j in range(i,i+self.num_cv_splits):
-                split_mse.append(mse(true_pred_pairs[j][0],true_pred_pairs[j][1]))
-            cv_mse.append(np.average(split_mse))
-        cur_cv_mse=np.average(cv_mse)
-        if force_saveplots or (cur_cv_mse < self.model_stats['cv_avg_loss']):
-            self.model_stats['cv_avg_loss']=cur_cv_mse
-            self.model_stats['cv_std_loss']=np.std(cv_mse)
-
-            self.plotpairs_cv=[[],[],[]] #if best CV loss, save the predictions for the first repeat across the splits 
-            for i in range(0,self.num_cv_splits):
-                self.plotpairs_cv[0]=self.plotpairs_cv[0]+true_pred_pairs[i][0]
-                self.plotpairs_cv[1]=self.plotpairs_cv[1]+true_pred_pairs[i][1]
-                self.plotpairs_cv[2]=self.plotpairs_cv[2]+true_pred_pairs[i][2]
-        return cur_cv_mse
-
-    def evaluate_model_test(self,space):
-        'train the reapeated training data. Calculate average loss on test set to average out model randomness'
-        true_pred_pairs=self.evaluate_model_common(space,True)
-        mse_list=[]
-        for i in true_pred_pairs:
-            mse_list.append(mse(i[0],i[1]))
-        cur_test_mse=np.average(mse_list)
-        self.model_stats['test_avg_loss']=cur_test_mse
-        self.model_stats['test_std_loss']=np.std(mse_list)
-        self.plotpairs_test=[[],[],[]]
-        self.plotpairs_test[0]=self.plotpairs_test[0]+true_pred_pairs[0][0]
-        self.plotpairs_test[1]=self.plotpairs_test[1]+true_pred_pairs[0][1]
-        self.plotpairs_test[2]=self.plotpairs_test[2]+true_pred_pairs[0][2]
-        return cur_test_mse
-
-    def print_tpe_trials(self):
-        print(pd.DataFrame(list(self.tpe_trials.results)))
-
-    def get_best_trial(self):
-        'sort trials by loss, return best trial'
-        if len(self.tpe_trials)>0:
-            if len(self.tpe_trials)<self.num_hyp_trials:
-                print('Warning: Not fully tested hyperparameters: ' + str(len(self.tpe_trials)) + '<' + str(self.num_hyp_trials)+':'+self.model_name)
-            sorted_trials = sorted(self.tpe_trials.results, key=lambda x: x['loss'], reverse=False)
-            return sorted_trials[0]
-        print('no trials found')
-
     def save_model(self,model_no):
         'save the trained model'
         ## Checks if the regression model for the data is based on neural network
@@ -231,56 +154,221 @@ class model:
             self._model.model.load_weights(self.model_loc+'_'+str(model_no)+'/').expect_partial()
         else:
             self._model.model=pickle.load(open(self.model_loc+'_'+str(model_no)+'.pkl', "rb"))
-#### Fix this below
-    
 
+            
+## Some functions only works for the objects defined in the submodels_module.py:
+#assay_to_yield_model
+#seq_to_yield_model
+#seqandassay_to_yield_model
+#final_seq_to_yield_model
+#seq_to_pred_yield_model
+#seq_to_assay_model
+#control_to_assay_model
+#control_to_yield_model
+#sequence_embeding_to_yield_model
+## These objects will be reffered as LIST_A objects. 
+
+
+    
+    def format_modelIO(self,df):
+        ## df is a dataframe object
+        'based upon model architecture and catagorical variables create the numpy input (x) and output (y) for the model'
+        ## This function only works for the objects defined in the submodels_module.py which is specified above as LIST_A objects.
+        ## Depending on the object the .get_output_and_explode() function accesses the .explode_yield or the .explode_assay function respectively
+        ## Similarly depening on the object the .get_input_seq() function accesses the .get_ordinal() , .get_onehot() , .get_control(), .get_embedding(), .get_assays() or .get_seq_and_assay() function
+        ## The function listed above that .get_output_and )explode and .get_input_seq functions acesses are available in the load_format_data.py script
+        df_local,cat_var,y=self.get_output_and_explode(df) #set y, do output firest to explode cat variables
+        ## Refer to the load_format_data functions of explode_yield and explode_assay to determine the value in df_local, cat_var and y
+        x_a=self.get_input_seq(df_local) #set xa (OH seq, Ord seq, assay, control)
+        x=load_format_data.mix_with_cat_var(x_a,cat_var) #mix xa with cat variables
+        ## The function returns a tuple with x,y and cat_var
+        return x,y,cat_var
+    
     def make_cv_dataset(self):
         'create list of subtraining/validation by repeated cv of training data'
+        ## This function only works for the objects defined in the submodels_module.py which is specified above as LIST_A objects. 
+        ## Depending on the object the self.training_df dataframe class object the default training data is either the seq_to_assay_train_1,8,10.pkl file or the assay_to_dot_training_data.pkl file
+        ## Similarly the self.num_cv_splits and the self.num_cv_repeats integer class objects are either 10 or 3 depending on the LIST_A object
+        ## local_df using the sub_sample() function from load_format_data.py returns a dataframe of randomly selected data a fraction of the traininf_df data entered
         local_df=load_format_data.sub_sample(self.training_df,self.sample_fraction)
-        kf=RepeatedKFold(n_splits=self.num_cv_splits,n_repeats=self.num_cv_repeats)
+    
+        ## RepeatedKFold splits data into test and train for cross validation. As mentioned above depending on the object calling this function.
+        ## the number of flods are either 100 or 30 or 9. 
+        kf = RepeatedKFold(n_splits=self.num_cv_splits,n_repeats=self.num_cv_repeats)
         train,validate=[],[]
+        ## an array of the same length as the above local_df filled with zeros is created and then indices are generated to split into train and test data
         for train_index, test_index in kf.split(np.zeros(len(local_df))):
             train.append(local_df.iloc[train_index])
             validate.append(local_df.iloc[test_index])
+            ## The data corresponding to the train and test indicies generated in local_df are placed in the array.
+            ## The train and validate lists will both be the same length and each contain arrays with dataframe objects in them.
+            ## The arrays that have the same indice in the train and validate lists are complementary training and testing data. 
+        ## This creates a new class variable self.data_pairs which is a zip object which is tuple iterator, it takes two iteratable objects
+        ## and pairs object in the same indice in one tuple.
+        ## self.data_pairs is a tuple containing mutiple tuples each of length 2. The 2 elements of the inner tuples are the test and train complementary data
         self.data_pairs=zip(train,validate)
 
     def make_test_dataset(self):
         'create list of full training set/test set for repeated model performance evaluation'
+        ## This function only works for the objects defined in the submodels_module.py which is specified above as LIST_A objects. 
+        ## Depending on the object the self.training_df dataframe class object the default training data is either the seq_to_assay_train_1,8,10.pkl file or the assay_to_dot_training_data.pkl file
+        ## Similarly the self.testing_df dataframe class object is an attribute for LIST_A objects. The defaults dataframe for self.testing_df is the seq_to_dot_test.pkl and assay_to_data_training.pkl file
+        ## local_df using the sub_sample() function from load_format_data.py returns a dataframe of randomly selected data a fraction of the training_df data entered
         local_df=load_format_data.sub_sample(self.training_df,self.sample_fraction)
         train,test=[],[]
-        for i in range(self.num_test_repeats):
-            train.append(local_df)
-            test.append(self.testing_df)
+        ## Depending on object the self.num_test_repeats is an integer attribute defaulted to either 10 or 1.
+        if self.num_test_repeats>1:
+            for i in range(self.num_test_repeats):
+                temp = load_format_data.sub_sample(self.testing_df,self.sample_fraction)
+                ## Temp is a randomly selected portion of the testing data 
+                train.append(local_df)
+                test.append(temp)
+                ## The training and randomly selected portion of the testing data are appended to the train and test list respectively
+        else:
+            for i in range(self.num_test_repeats):
+                train.append(local_df)
+                test.append(self.training_df)
+                ## The training and testing data is added to the train and test list
+        ## self.data_pairs is a tuple containing mutiple tuples each of length 2. The 2 elements of the inner tuples are the test and train complementary data
         self.data_pairs=zip(train,test)
+
+            
+    def evaluate_model_common(self,space,save_model = False):
+        ## The space input is a dictionary with the details regarding the parameter space 
+        ## save_model is an input affirming that the model should be saved. 
+        true_pred_pairs=[]
+        model_no=0
+        ## The data_pairs a zip attribute created in the make_test_dataset or the make_cv_dataset function is accessed
+        for i in self.data_pairs:
+            train_x,train_y,train_cat_var=self.format_modelIO(i[0])
+            ## creates input x and output y  for the training model, this uses the previously defined format_modelIO function
+            test_x,test_y,test_cat_var=self.format_modelIO(i[1])
+            ## creates input x and output y  for the testing model, this uses the previously defined format_modelIO function
+            self._model.set_model(space,xa_len=len(train_x[0])-len(train_cat_var[0]), cat_var_len=len(train_cat_var[0]), lin_or_sig=self.lin_or_sig)
+            ## Depending on the model architecture the specified regression is run, this function is defined in the model_architecture.py script
+            self._model.fit(train_x,train_y)
+            ## Takes the training data and according to the above run regression fits the data to gain a model
+            if save_model != False:
+                self.save_model(model_no)
+            ## Runs the save_model() function previously defined if needed 
+            test_prediction=self._model.model.predict(test_x).squeeze().tolist()
+            ## test_predictions is a list containing the predicted values using a linear model on the test data
+            true_pred_pairs.append([test_y,test_prediction,test_cat_var])
+            ## Then the test predicted values, along with the test_y and test_cat_var values are added to the same index as tuple containing the test and train data used to construct the model
+            model_no=model_no+1
+            ## The number of models constructed is same as the length of the data_pairs attribute.
+        ## Finally the test_y data along with the predicted test data are returned for each training testing data pair in the self.data_pairs attribute
+        return true_pred_pairs
+
+    def evaluate_model_cv(self,space,force_saveplots=False):
+        'train the repeated kfold dataset. Caclulate average across splits of one dataset, then average across repeats of dataset'
+        true_pred_pairs=self.evaluate_model_common(space,False)
+        ## Initally the evalute_model_common is run and the value is assigned to the true_pred_pairs variable. 
+        cv_mse=[] #average mse values for each repeat of the spliting
+        for i in range(0,len(true_pred_pairs),self.num_cv_splits):
+            split_mse=[] #mse values for each split of the data
+            for j in range(i,i+self.num_cv_splits):
+                split_mse.append(mse(true_pred_pairs[j][0],true_pred_pairs[j][1]))
+                ## The test_y and test_prediction value from the evaluate_model_common function are passed into a mean squared error
+                ## function which returns a flot representing a mean squared error regression loss
+            cv_mse.append(np.average(split_mse))
+            ## the split_mse list is appended to the empty cv_mse list
+        cur_cv_mse=np.average(cv_mse)
+        ## computes the average of the mean squared error regression loss. 
+        if force_saveplots or (cur_cv_mse < self.model_stats['cv_avg_loss']):
+            self.model_stats['cv_avg_loss']=cur_cv_mse
+            self.model_stats['cv_std_loss']=np.std(cv_mse)
+            ## This saves the model statistics in the model_dsats variable.
+            self.plotpairs_cv=[[],[],[]] #if best CV loss, save the predictions for the first repeat across the splits 
+            for i in range(0,self.num_cv_splits):
+                self.plotpairs_cv[0]=self.plotpairs_cv[0]+true_pred_pairs[i][0]
+                ## Adds each of the test_y values in the true_pred_pairs and stores it in first indices of the plotpairs_cv
+                self.plotpairs_cv[1]=self.plotpairs_cv[1]+true_pred_pairs[i][1]
+                ## Adds each of the test_prediction values in the true_pred_pairs and stores it in second indices of the plotpairs_cv
+                self.plotpairs_cv[2]=self.plotpairs_cv[2]+true_pred_pairs[i][2]
+                ## Adds each of the test_cat_var values in the true_pred_pairs and stores it in third indices of the plotpairs_cv
+        ## Returns the average mean squared error regression loss 
+        return cur_cv_mse
+    
+    def evaluate_model_test(self,space):
+        'train the reapeated training data. Calculate average loss on test set to average out model randomness'
+        true_pred_pairs=self.evaluate_model_common(space,True)
+        ## Initally the evalute_model_common is run and the value is assigned to the true_pred_pairs variable.
+        mse_list=[]
+        for i in true_pred_pairs:
+            mse_list.append(mse(i[0],i[1]))
+            ## This calculates the mean squared error regression loss for each test and prediction pair and adds it to the mse_list
+        cur_test_mse=np.average(mse_list)
+        ## this calculates the average regression loss
+        self.model_stats['test_avg_loss']=cur_test_mse
+        self.model_stats['test_std_loss']=np.std(mse_list)
+        self.plotpairs_test=[[],[],[]]
+        self.plotpairs_test[0]=self.plotpairs_test[0]+true_pred_pairs[0][0]
+        self.plotpairs_test[1]=self.plotpairs_test[1]+true_pred_pairs[0][1]
+        self.plotpairs_test[2]=self.plotpairs_test[2]+true_pred_pairs[0][2]
+        ## The above commands update the self.model_stats and self.plotpairs_test class variables similar to the evaluvate_model_cv() function
+        ## This function returns the average mean squared error regression loss
+        return cur_test_mse
+
+    def print_tpe_trials(self):
+        print(pd.DataFrame(list(self.tpe_trials.results)))
+
+    def get_best_trial(self):
+        'sort trials by loss, return best trial'
+        if len(self.tpe_trials)>0:
+            ## The length of the hyperopt trails are verified to be greater than 0
+            if len(self.tpe_trials)<self.num_hyp_trials:
+                ## self.num_hyp_trials is a class variable exsisting in the LIST_A objects. This number is default set to 50.
+                ## If the hyperopt trials length is lesser than the default number of hyperopt trials a warning is displayed.
+                print('Warning: Not fully tested hyperparameters: ' + str(len(self.tpe_trials)) + '<' + str(self.num_hyp_trials)+':'+self.model_name)
+            sorted_trials = sorted(self.tpe_trials.results, key=lambda x: x['loss'], reverse=False)
+            ## the hyperopt trial data is sorted in ascending order with respect to the mse regression loss 
+            ## The lesser the regression loss the better the trials, therefore the first trial in the sorted_trials which has the least amount of loss
+            ## thereby being the best trial.
+            return sorted_trials[0]
+        ## if the tpe_trials is zero that means no data was found during for this specific model.
+        print('no trials found')
+
 
     def set_model_state(self,cv):
         'create list of paired dataframes and determine how to calculate loss based upon cross-validaiton or applying to test set'
         if cv:
             self.evaluate_model=self.evaluate_model_cv
-            self.make_cv_dataset() 
+            self.make_cv_dataset()
+            ## If a cross validation test is to be done a class variable self.evaluate_model is created linking it to the
+            ## previously defined evaluate_model_cv(). Then make_cv_dataset() function is run and the self.data_pairs test and train datasets sets are created
         else:
             self.evaluate_model=self.evaluate_model_test
             self.make_test_dataset()
+            ## If a cross validation is not to be run, then the self.evaluate_model is created linking it to the evaluate_model_test() function
+            ## and the data_pairs class variable is created which is a complementary test and train data.
 
     def hyperopt_obj(self,space):
         'for a given hyperparameter set, build model arch, evaluate model, return validation loss'
         self.set_model_state(cv=True)
         loss=self.evaluate_model(space)
-
+        ## For a given hyperparameter space, the training and testing data are created then depending on the model archietecture
+        ## a regression is run on the training and is used to predict the testing data behaviour. Then the regression loss is calculated
+        ## for the prediction made and the regression loss is averaged over various regression models created. Following this the regression loss
+        ## along with the hyperparameter spcae are returned in a dictionary. 
         return {'loss': loss, 'status': STATUS_OK ,'hyperparam':space}
 
     def cross_validate_model(self):
         'use hpyeropt to determine hyperparameters for self.tpe_trials'
         if len(self.tpe_trials)<self.num_hyp_trials:
+            ## Happens if the hyperparameters arent fully tested. 
             if 'nn' in self.model_architecture:
+                ## If the regression model architecture is a form of neural network model then
                 for i in range(10):
                     max_evals=min(len(self.tpe_trials)+5,self.num_hyp_trials)
                     tpe_best=fmin(fn=self.hyperopt_obj,space=self._model.parameter_space,algo=tpe.suggest,trials=self.tpe_trials,max_evals=max_evals)
+                    ## The hyperopt_obj function is mininmized with a downhill simplex algorithm and all the plots, model_stats and hyperopt trials are saved in theire respective datasets. 
                     self.save_hyp()
                     self.save_model_stats()
                     self.save_plotpairs()
             else:
                 tpe_best=fmin(fn=self.hyperopt_obj,space=self._model.parameter_space,algo=tpe.suggest,trials=self.tpe_trials,max_evals=self.num_hyp_trials)
+                ## The hyperopt_obj function is mininmized with a downhill simplex algorithm and all the plots, model_stats and hyperopt trials are saved in theire respective datasets.
                 self.save_hyp()
                 self.save_model_stats()
                 self.save_plotpairs()
@@ -293,11 +381,16 @@ class model:
         'using the best hyperparameters, train using full training dataset and predict test set'
         self.set_model_state(cv=False)
         loss=self.evaluate_model(self.get_best_trial()['hyperparam'])
+        ## For a given hyperparameter space, the training and testing data are created then depending on the model archietecture
+        ## a regression is run on the training and is used to predict the testing data behaviour. Then the regression loss is calculated
+        ## for the prediction made and the regression loss is averaged over various regression models created.
         self.save_model_stats()
         self.save_plotpairs()
+        ## The model_stats and plot data is saved and the average regression loss is printed.
         print('test loss=',str(loss))
 
     def plot(self):
         figure=self.plot_type(self)
         figure.fig.savefig(self.figure_file)
         figure.fig.clf()
+        ## The figure for the data is saved. 

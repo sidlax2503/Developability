@@ -18,7 +18,7 @@ def sub_sample(df,sample_fraction):
     sub=random.sample(range(len(df)),int(len(df)*sample_fraction))
     ##sub is a temporary list containing the randomly selected positions from df.
     ## The function returns a dataframe of randomly selected samples from the
-    ## original data fram by randomly generating index positions for a given amount of sample fraction
+    ## original data frame by randomly generating index positions for a given amount of sample fraction
     return df.iloc[sub]
 
 ## suggestions: consider using train size between 0-1.0 instead of int
